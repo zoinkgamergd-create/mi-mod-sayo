@@ -1,100 +1,141 @@
-/**
- * Include the Geode headers.
- */
 #include <Geode/Geode.hpp>
+#include <Geode/modify/GJBaseGameLayer.hpp>
+#include <string>
+#include <chrono>
+#include <algorithm>
 
-/**
- * Brings cocos2d and all Geode namespaces to the current scope.
- */
 using namespace geode::prelude;
 
-/**
- * `$modify` lets you extend and modify GD's classes.
- * To hook a function in Geode, simply $modify the class
- * and write a new function definition with the signature of
- * the function you want to hook.
- *
- * Here we use the overloaded `$modify` macro to set our own class name,
- * so that we can use it for button callbacks.
- *
- * Notice the header being included, you *must* include the header for
- * the class you are modifying, or you will get a compile error.
- *
- * Another way you could do this is like this:
- *
- * struct MyMenuLayer : Modify<MyMenuLayer, MenuLayer> {};
- */
-#include <Geode/modify/MenuLayer.hpp>
-class $modify(MyMenuLayer, MenuLayer) {
-	/**
-	 * Typically classes in GD are initialized using the `init` function, (though not always!),
-	 * so here we use it to add our own button to the bottom menu.
-	 *
-	 * Note that for all hooks, your signature has to *match exactly*,
-	 * `void init()` would not place a hook!
-	*/
-	bool init() {
-		/**
-		 * We call the original init function so that the
-		 * original class is properly initialized.
-		 */
-		if (!MenuLayer::init()) {
-			return false;
-		}
+// Función ultra-optimizada para reproducir y reutilizar las animaciones sin consumir CPU adicional
+void playVideoAnimation(const std::string& animName, GJBaseGameLayer* layer) {
+    const int VIDEO_TAG = 80085; // Identificador único para el sprite de la animación
 
-		/**
-		 * You can use methods from the `geode::log` namespace to log messages to the console,
-		 * being useful for debugging and such. See this page for more info about logging:
-		 * https://docs.geode-sdk.org/tutorials/logging
-		*/
-		log::debug("Hello from my MenuLayer::init hook! This layer has {} children.", this->getChildrenCount());
+    // Buscamos la animación precargada en la memoria caché del juego
+    auto animation = CCAnimationCache::sharedAnimationCache()->animationByName(animName.c_str());
+    if (!animation) return;
 
-		/**
-		 * See this page for more info about buttons
-		 * https://docs.geode-sdk.org/tutorials/buttons
-		*/
-		auto myButton = CCMenuItemSpriteExtra::create(
-			CCSprite::createWithSpriteFrameName("GJ_likeBtn_001.png"),
-			this,
-			/**
-			 * Here we use the name we set earlier for our modify class.
-			*/
-			menu_selector(MyMenuLayer::onMyButton)
-		);
+    auto animate = CCAnimate::create(animation);
+    auto sequence = CCSequence::create(
+        animate,
+        CCRemoveSelf::create(), // Se elimina automáticamente al terminar la secuencia de 1 segundo
+        nullptr
+    );
 
-		/**
-		 * Here we access the `bottom-menu` node by its ID, and add our button to it.
-		 * Node IDs are a Geode feature, see this page for more info about it:
-		 * https://docs.geode-sdk.org/tutorials/nodetree
-		*/
-		auto menu = this->getChildByID("bottom-menu");
-		menu->addChild(myButton);
+    // REUTILIZACIÓN DE MEMORIA (Antilag):
+    // Si el sprite ya existe en pantalla (spam de clics), detenemos su frame actual
+    // y lo reiniciamos desde el principio, evitando instanciar nuevos objetos en la RAM.
+    if (auto sprite = static_cast<CCSprite*>(layer->getChildByTag(VIDEO_TAG))) {
+        sprite->stopAllActions(); 
+        sprite->runAction(sequence); 
+    } 
+    // Si es el primer clic o la animación anterior ya había finalizado, creamos el sprite
+    else {
+        auto firstFrame = static_cast<CCSpriteFrame*>(animation->getFrames()->objectAtIndex(0));
+        auto newSprite = CCSprite::createWithSpriteFrame(firstFrame);
+        newSprite->setTag(VIDEO_TAG);
 
-		/**
-		 * The `_spr` string literal operator just prefixes the string with
-		 * your mod id followed by a slash. This is good practice for setting your own node ids.
-		*/
-		myButton->setID("my-button"_spr);
+        // Centrar en pantalla y escalar proporcionalmente para cubrir todo el ancho/alto (Aspect-Ratio)
+        auto winSize = CCDirector::sharedDirector()->getWinSize();
+        newSprite->setPosition(winSize / 2);
+        
+        float scaleX = winSize.width / newSprite->getContentSize().width;
+        float scaleY = winSize.height / newSprite->getContentSize().height;
+        newSprite->setScale(std::max(scaleX, scaleY));
 
-		/**
-		 * We update the layout of the menu to ensure that our button is properly placed.
-		 * This is yet another Geode feature, see this page for more info about it:
-		 * https://docs.geode-sdk.org/tutorials/layouts
-		*/
-		menu->updateLayout();
+        newSprite->runAction(sequence);
+        layer->addChild(newSprite, 9999); // Dibujar en la capa superior por encima del gameplay
+    }
+}
 
-		/**
-		 * We return `true` to indicate that the class was properly initialized.
-		 */
-		return true;
-	}
+class $modify(MyBaseGameLayer, GJBaseGameLayer) {
+    struct Fields {
+        // Registros de tiempo usando steady_clock para medir intervalos de microsegundos de forma precisa
+        std::chrono::steady_clock::time_point m_lastP1Click = std::chrono::steady_clock::now() - std::chrono::hours(1);
+        std::chrono::steady_clock::time_point m_lastP2Click = std::chrono::steady_clock::now() - std::chrono::hours(1);
+    };
 
-	/**
-	 * This is the callback function for the button we created earlier.
-	 * The signature for button callbacks must always be the same,
-	 * return type `void` and taking a `CCObject*`.
-	*/
-	void onMyButton(CCObject*) {
-		FLAlertLayer::create("Geode", "Hello from my custom mod!", "OK")->show();
-	}
+    bool init() {
+        if (!GJBaseGameLayer::init()) return false;
+
+        // 1. Precarga de las 90 imágenes directamente en la memoria de la GPU
+        // Esto evita tirones de disco duro durante el gameplay intenso.
+        for (int i = 0; i < 30; i++) {
+            CCTextureCache::sharedTextureCache()->addImage(fmt::format("p1_frame_{:02d}.png", i).c_str());
+            CCTextureCache::sharedTextureCache()->addImage(fmt::format("p2_frame_{:02d}.png", i).c_str());
+            CCTextureCache::sharedTextureCache()->addImage(fmt::format("dual_frame_{:02d}.png", i).c_str());
+        }
+
+        // 2. Definición del creador de animaciones a 30fps
+        auto cacheAnimation = [](const std::string& prefix, const std::string& animName) {
+            auto animFrames = CCArray::create();
+            for (int i = 0; i < 30; i++) {
+                std::string fileName = fmt::format("{}_{:02d}.png", prefix, i);
+                auto texture = CCTextureCache::sharedTextureCache()->textureForKey(fileName.c_str());
+                if (texture) {
+                    auto rect = CCRect{ 0, 0, texture->getContentSize().width, texture->getContentSize().height };
+                    auto frame = CCSpriteFrame::createWithTexture(texture, rect);
+                    animFrames->addObject(frame);
+                }
+            }
+            // 30 FPS = 1.0 segundo / 30.0 frames = ~0.033s por cuadro de animación
+            auto animation = CCAnimation::createWithSpriteFrames(animFrames, 1.0f / 30.0f);
+            CCAnimationCache::sharedAnimationCache()->addAnimation(animation, animName.c_str());
+        };
+
+        // Almacenamos las tres animaciones estructuradas en la caché global del motor
+        cacheAnimation("p1_frame", "p1_anim");
+        cacheAnimation("p2_frame", "p2_anim");
+        cacheAnimation("dual_frame", "dual_anim");
+
+        return true;
+    }
+
+    void pushButton(PlayerButton btn, bool isPlayer2) {
+        GJBaseGameLayer::pushButton(btn, isPlayer2);
+        
+        // Filtrar clics para actuar solo ante comandos de Salto (Teclas de clic/espacio/up)
+        if (btn != PlayerButton::Jump) return;
+
+        // Comprobación de seguridad: ¿El nivel actual está configurado como 'Two Player Mode'?
+        bool isTwoPlayerLevel = false;
+        if (this->m_levelSettings) {
+            isTwoPlayerLevel = this->m_levelSettings->m_twoPlayerMode;
+        }
+
+        if (isTwoPlayerLevel) {
+            // === LÓGICA DE DETECCIÓN DUAL (Mano Izquierda, Derecha y Simultáneo) ===
+            auto now = std::chrono::steady_clock::now();
+            const auto simultaneousThreshold = std::chrono::milliseconds(50); // Margen de coincidencia física
+
+            if (!isPlayer2) { // Acción Jugador 1
+                m_fields->m_lastP1Click = now;
+                auto timeDiff = std::chrono::duration_cast<std::chrono::milliseconds>(now - m_fields->m_lastP2Click);
+                
+                if (timeDiff < simultaneousThreshold) {
+                    playVideoAnimation("dual_anim", this); // Acción combinada (Ambas manos)
+                } else {
+                    playVideoAnimation("p1_anim", this); // Solo Mano Izquierda
+                }
+            } 
+            else { // Acción Jugador 2
+                m_fields->m_lastP2Click = now;
+                auto timeDiff = std::chrono::duration_cast<std::chrono::milliseconds>(now - m_fields->m_lastP1Click);
+                
+                if (timeDiff < simultaneousThreshold) {
+                    playVideoAnimation("dual_anim", this); // Acción combinada (Ambas manos)
+                } else {
+                    playVideoAnimation("p2_anim", this); // Solo Mano Derecha
+                }
+            }
+        } 
+        else {
+            // === LÓGICA SPAM INDEPENDIENTE (1 Player - Multi-teclado/Sayo) ===
+            // Se desactiva la detección de simultaneidad para permitir alternar dedos a máxima velocidad sin bugs
+            if (!isPlayer2) {
+                playVideoAnimation("p1_anim", this); // Tecla izquierda Sayo (Mano 1)
+            } else {
+                playVideoAnimation("p2_anim", this); // Tecla derecha Sayo (Mano 2)
+            }
+        }
+    }
 };
