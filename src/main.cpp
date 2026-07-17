@@ -3,6 +3,7 @@
 #include <string>
 #include <chrono>
 #include <algorithm>
+#include <format>
 
 using namespace geode::prelude;
 
@@ -10,7 +11,8 @@ using namespace geode::prelude;
 void playVideoAnimation(const std::string& animName, GJBaseGameLayer* layer) {
     const int VIDEO_TAG = 80085;
 
-    auto animation = CCAnimationCache::sharedAnimationCache()->animationByName(animName.c_str());
+    // Sintaxis pura de Geode v3 usando ::get()
+    auto animation = CCAnimationCache::get()->animationByName(animName.c_str());
     if (!animation) return;
 
     auto animate = CCAnimate::create(animation);
@@ -29,7 +31,7 @@ void playVideoAnimation(const std::string& animName, GJBaseGameLayer* layer) {
         auto newSprite = CCSprite::createWithSpriteFrame(firstFrame);
         newSprite->setTag(VIDEO_TAG);
 
-        auto winSize = CCDirector::sharedDirector()->getWinSize();
+        auto winSize = CCDirector::get()->getWinSize();
         newSprite->setPosition(winSize / 2);
         
         float scaleX = winSize.width / newSprite->getContentSize().width;
@@ -53,25 +55,25 @@ class $modify(MyBaseGameLayer, GJBaseGameLayer) {
         
         if (btn != PlayerButton::Jump) return;
 
-        // Inicialización usando el motor nativo del juego (Inmune a fallos)
+        // Inicialización limpia con std::format nativo de Geode v3
         if (!m_fields->m_initialized) {
             m_fields->m_initialized = true;
 
             for (int i = 0; i < 30; i++) {
-                const char* p1File = CCString::createWithFormat("p1_frame_%02d.png", i)->getCString();
-                const char* p2File = CCString::createWithFormat("p2_frame_%02d.png", i)->getCString();
-                const char* dualFile = CCString::createWithFormat("dual_frame_%02d.png", i)->getCString();
+                auto p1File = std::format("p1_frame_{:02d}.png", i);
+                auto p2File = std::format("p2_frame_{:02d}.png", i);
+                auto dualFile = std::format("dual_frame_{:02d}.png", i);
 
-                CCTextureCache::sharedTextureCache()->addImage(p1File);
-                CCTextureCache::sharedTextureCache()->addImage(p2File);
-                CCTextureCache::sharedTextureCache()->addImage(dualFile);
+                CCTextureCache::get()->addImage(p1File.c_str());
+                CCTextureCache::get()->addImage(p2File.c_str());
+                CCTextureCache::get()->addImage(dualFile.c_str());
             }
 
-            auto cacheAnimation = [](const char* prefix, const char* animName) {
+            auto cacheAnimation = [](const std::string& prefix, const std::string& animName) {
                 auto animFrames = CCArray::create();
                 for (int i = 0; i < 30; i++) {
-                    const char* fileName = CCString::createWithFormat("%s_%02d.png", prefix, i)->getCString();
-                    auto texture = CCTextureCache::sharedTextureCache()->textureForKey(fileName);
+                    auto fileName = std::format("{}_{:02d}.png", prefix, i);
+                    auto texture = CCTextureCache::get()->textureForKey(fileName.c_str());
                     if (texture) {
                         auto rect = CCRect{ 0, 0, texture->getContentSize().width, texture->getContentSize().height };
                         auto frame = CCSpriteFrame::createWithTexture(texture, rect);
@@ -79,7 +81,7 @@ class $modify(MyBaseGameLayer, GJBaseGameLayer) {
                     }
                 }
                 auto animation = CCAnimation::createWithSpriteFrames(animFrames, 1.0f / 30.0f);
-                CCAnimationCache::sharedAnimationCache()->addAnimation(animation, animName);
+                CCAnimationCache::get()->addAnimation(animation, animName.c_str());
             };
 
             cacheAnimation("p1_frame", "p1_anim");
@@ -88,8 +90,8 @@ class $modify(MyBaseGameLayer, GJBaseGameLayer) {
         }
 
         bool isTwoPlayerLevel = false;
-        if (this->m_levelSettings) {
-            isTwoPlayerLevel = this->m_levelSettings->m_twoPlayerMode;
+        if (m_levelSettings) {
+            isTwoPlayerLevel = m_levelSettings->m_twoPlayerMode;
         }
 
         if (isTwoPlayerLevel) {
