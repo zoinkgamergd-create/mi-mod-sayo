@@ -3,7 +3,6 @@
 #include <string>
 #include <chrono>
 #include <algorithm>
-#include <format>
 
 using namespace geode::prelude;
 
@@ -11,7 +10,7 @@ using namespace geode::prelude;
 void playVideoAnimation(const std::string& animName, GJBaseGameLayer* layer) {
     const int VIDEO_TAG = 80085;
 
-    // Sintaxis pura de Geode v3 usando ::get()
+    // Sintaxis pura de Geode v3
     auto animation = CCAnimationCache::get()->animationByName(animName.c_str());
     if (!animation) return;
 
@@ -55,14 +54,14 @@ class $modify(MyBaseGameLayer, GJBaseGameLayer) {
         
         if (btn != PlayerButton::Jump) return;
 
-        // Inicialización limpia con std::format nativo de Geode v3
+        // Inicialización limpia usando el motor gráfico nativo (Inmune a fallos de versión de C++)
         if (!m_fields->m_initialized) {
             m_fields->m_initialized = true;
 
             for (int i = 0; i < 30; i++) {
-                auto p1File = std::format("p1_frame_{:02d}.png", i);
-                auto p2File = std::format("p2_frame_{:02d}.png", i);
-                auto dualFile = std::format("dual_frame_{:02d}.png", i);
+                std::string p1File = CCString::createWithFormat("p1_frame_%02d.png", i)->getCString();
+                std::string p2File = CCString::createWithFormat("p2_frame_%02d.png", i)->getCString();
+                std::string dualFile = CCString::createWithFormat("dual_frame_%02d.png", i)->getCString();
 
                 CCTextureCache::get()->addImage(p1File.c_str());
                 CCTextureCache::get()->addImage(p2File.c_str());
@@ -72,7 +71,7 @@ class $modify(MyBaseGameLayer, GJBaseGameLayer) {
             auto cacheAnimation = [](const std::string& prefix, const std::string& animName) {
                 auto animFrames = CCArray::create();
                 for (int i = 0; i < 30; i++) {
-                    auto fileName = std::format("{}_{:02d}.png", prefix, i);
+                    std::string fileName = CCString::createWithFormat("%s_%02d.png", prefix.c_str(), i)->getCString();
                     auto texture = CCTextureCache::get()->textureForKey(fileName.c_str());
                     if (texture) {
                         auto rect = CCRect{ 0, 0, texture->getContentSize().width, texture->getContentSize().height };
@@ -89,9 +88,12 @@ class $modify(MyBaseGameLayer, GJBaseGameLayer) {
             cacheAnimation("dual_frame", "dual_anim");
         }
 
+        // Verificación ultra segura del modo de 2 jugadores buscando la capa de juego activa
         bool isTwoPlayerLevel = false;
-        if (m_levelSettings) {
-            isTwoPlayerLevel = m_levelSettings->m_twoPlayerMode;
+        if (auto playLayer = PlayLayer::get()) {
+            if (playLayer->m_levelSettings && playLayer->m_levelSettings->m_twoPlayerMode) {
+                isTwoPlayerLevel = true;
+            }
         }
 
         if (isTwoPlayerLevel) {
