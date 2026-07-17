@@ -3,6 +3,7 @@
 #include <string>
 #include <chrono>
 #include <algorithm>
+#include <format> // Nativo de C++20 para reemplazar a fmt
 
 using namespace geode::prelude;
 
@@ -17,13 +18,11 @@ void playVideoAnimation(const std::string& animName, GJBaseGameLayer* layer) {
     auto animate = CCAnimate::create(animation);
     auto sequence = CCSequence::create(
         animate,
-        CCRemoveSelf::create(), // Se elimina automáticamente al terminar la secuencia de 1 segundo
+        CCRemoveSelf::create(), // Se elimina automáticamente al terminar la secuencia
         nullptr
     );
 
     // REUTILIZACIÓN DE MEMORIA (Antilag):
-    // Si el sprite ya existe en pantalla (spam de clics), detenemos su frame actual
-    // y lo reiniciamos desde el principio, evitando instanciar nuevos objetos en la RAM.
     if (auto sprite = static_cast<CCSprite*>(layer->getChildByTag(VIDEO_TAG))) {
         sprite->stopAllActions(); 
         sprite->runAction(sequence); 
@@ -34,7 +33,7 @@ void playVideoAnimation(const std::string& animName, GJBaseGameLayer* layer) {
         auto newSprite = CCSprite::createWithSpriteFrame(firstFrame);
         newSprite->setTag(VIDEO_TAG);
 
-        // Centrar en pantalla y escalar proporcionalmente para cubrir todo el ancho/alto (Aspect-Ratio)
+        // Centrar en pantalla y escalar proporcionalmente (Aspect-Ratio)
         auto winSize = CCDirector::sharedDirector()->getWinSize();
         newSprite->setPosition(winSize / 2);
         
@@ -54,46 +53,45 @@ class $modify(MyBaseGameLayer, GJBaseGameLayer) {
         std::chrono::steady_clock::time_point m_lastP2Click = std::chrono::steady_clock::now() - std::chrono::hours(1);
     };
 
-    bool init() {
-        if (!GJBaseGameLayer::init()) return false;
+    void pushButton(PlayerButton btn, bool isPlayer2) {
+        // INICIALIZACIÓN PEREZOSA (Evita errores de compilación al no usar init())
+        static bool initialized = false;
+        if (!initialized) {
+            initialized = true;
 
-        // 1. Precarga de las 90 imágenes directamente en la memoria de la GPU
-        // Esto evita tirones de disco duro durante el gameplay intenso.
-        for (int i = 0; i < 30; i++) {
-            CCTextureCache::sharedTextureCache()->addImage(fmt::format("p1_frame_{:02d}.png", i).c_str());
-            CCTextureCache::sharedTextureCache()->addImage(fmt::format("p2_frame_{:02d}.png", i).c_str());
-            CCTextureCache::sharedTextureCache()->addImage(fmt::format("dual_frame_{:02d}.png", i).c_str());
+            // 1. Precarga de las 90 imágenes directamente en la memoria de la GPU con std::format
+            for (int i = 0; i < 30; i++) {
+                CCTextureCache::sharedTextureCache()->addImage(std::format("p1_frame_{:02d}.png", i).c_str());
+                CCTextureCache::sharedTextureCache()->addImage(std::format("p2_frame_{:02d}.png", i).c_str());
+                CCTextureCache::sharedTextureCache()->addImage(std::format("dual_frame_{:02d}.png", i).c_str());
+            }
+
+            // 2. Definición del creador de animaciones a 30fps
+            auto cacheAnimation = [](const std::string& prefix, const std::string& animName) {
+                auto animFrames = CCArray::create();
+                for (int i = 0; i < 30; i++) {
+                    std::string fileName = std::format("{}_{:02d}.png", prefix, i);
+                    auto texture = CCTextureCache::sharedTextureCache()->textureForKey(fileName.c_str());
+                    if (texture) {
+                        auto rect = CCRect{ 0, 0, texture->getContentSize().width, texture->getContentSize().height };
+                        auto frame = CCSpriteFrame::createWithTexture(texture, rect);
+                        animFrames->addObject(frame);
+                    }
+                }
+                // 30 FPS = ~0.033s por cuadro de animación
+                auto animation = CCAnimation::createWithSpriteFrames(animFrames, 1.0f / 30.0f);
+                CCAnimationCache::sharedAnimationCache()->addAnimation(animation, animName.c_str());
+            };
+
+            // Almacenamos las tres animaciones estructuradas en la caché global del motor
+            cacheAnimation("p1_frame", "p1_anim");
+            cacheAnimation("p2_frame", "p2_anim");
+            cacheAnimation("dual_frame", "dual_anim");
         }
 
-        // 2. Definición del creador de animaciones a 30fps
-        auto cacheAnimation = [](const std::string& prefix, const std::string& animName) {
-            auto animFrames = CCArray::create();
-            for (int i = 0; i < 30; i++) {
-                std::string fileName = fmt::format("{}_{:02d}.png", prefix, i);
-                auto texture = CCTextureCache::sharedTextureCache()->textureForKey(fileName.c_str());
-                if (texture) {
-                    auto rect = CCRect{ 0, 0, texture->getContentSize().width, texture->getContentSize().height };
-                    auto frame = CCSpriteFrame::createWithTexture(texture, rect);
-                    animFrames->addObject(frame);
-                }
-            }
-            // 30 FPS = 1.0 segundo / 30.0 frames = ~0.033s por cuadro de animación
-            auto animation = CCAnimation::createWithSpriteFrames(animFrames, 1.0f / 30.0f);
-            CCAnimationCache::sharedAnimationCache()->addAnimation(animation, animName.c_str());
-        };
-
-        // Almacenamos las tres animaciones estructuradas en la caché global del motor
-        cacheAnimation("p1_frame", "p1_anim");
-        cacheAnimation("p2_frame", "p2_anim");
-        cacheAnimation("dual_frame", "dual_anim");
-
-        return true;
-    }
-
-    void pushButton(PlayerButton btn, bool isPlayer2) {
         GJBaseGameLayer::pushButton(btn, isPlayer2);
         
-        // Filtrar clics para actuar solo ante comandos de Salto (Teclas de clic/espacio/up)
+        // Filtrar clics para actuar solo ante comandos de Salto
         if (btn != PlayerButton::Jump) return;
 
         // Comprobación de seguridad: ¿El nivel actual está configurado como 'Two Player Mode'?
@@ -130,7 +128,6 @@ class $modify(MyBaseGameLayer, GJBaseGameLayer) {
         } 
         else {
             // === LÓGICA SPAM INDEPENDIENTE (1 Player - Multi-teclado/Sayo) ===
-            // Se desactiva la detección de simultaneidad para permitir alternar dedos a máxima velocidad sin bugs
             if (!isPlayer2) {
                 playVideoAnimation("p1_anim", this); // Tecla izquierda Sayo (Mano 1)
             } else {
