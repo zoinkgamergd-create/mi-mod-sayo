@@ -4,12 +4,5 @@
     "version": "1.0.0",
     "name": "Sayo Click Visualizer",
     "developer": "Laypedro",
-    "description": "Muestra animaciones personalizadas en pantalla (P1, P2 y Dual) al presionar las teclas de tu Sayo Device.",
-    "resources": {
-        "files": [
-            "p1_frame_*.png",
-            "p2_frame_*.png",
-            "dual_frame_*.png"
-        ]
-    }
+    "description": "Muestra animaciones personalizadas en pantalla (P1, P2 y Dual) al presionar las teclas de tu Sayo Device."
 }
