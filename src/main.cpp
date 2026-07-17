@@ -1,5 +1,5 @@
 #include <Geode/Geode.hpp>
-#include <Geode/modify/PlayLayer.hpp>
+#include <Geode/modify/GJBaseGameLayer.hpp>
 #include <string>
 #include <chrono>
 #include <algorithm>
@@ -7,7 +7,7 @@
 using namespace geode::prelude;
 
 // Función optimizada para reproducir y reutilizar las animaciones
-void playVideoAnimation(const std::string& animName, PlayLayer* layer) {
+void playVideoAnimation(const std::string& animName, GJBaseGameLayer* layer) {
     const int VIDEO_TAG = 80085;
 
     auto animation = CCAnimationCache::get()->animationByName(animName.c_str());
@@ -41,7 +41,7 @@ void playVideoAnimation(const std::string& animName, PlayLayer* layer) {
     }
 }
 
-class $modify(MyPlayLayer, PlayLayer) {
+class $modify(MyBaseGameLayer, GJBaseGameLayer) {
     struct Fields {
         std::chrono::steady_clock::time_point m_lastP1Click = std::chrono::steady_clock::now() - std::chrono::hours(1);
         std::chrono::steady_clock::time_point m_lastP2Click = std::chrono::steady_clock::now() - std::chrono::hours(1);
@@ -49,11 +49,11 @@ class $modify(MyPlayLayer, PlayLayer) {
     };
 
     void pushButton(PlayerButton btn, bool isPlayer2) {
-        PlayLayer::pushButton(btn, isPlayer2);
+        GJBaseGameLayer::pushButton(btn, isPlayer2);
         
         if (btn != PlayerButton::Jump) return;
 
-        // Inicialización limpia al primer clic dentro del nivel
+        // Inicialización limpia al primer clic sin usar librerías incompatibles
         if (!m_fields->m_initialized) {
             m_fields->m_initialized = true;
 
