@@ -1,24 +1,24 @@
 #include <Geode/Geode.hpp>
-#include <Geode/modify/GJBaseGameLayer.hpp>
+#include <Geode/modify/PlayLayer.hpp>
 #include <string>
 #include <chrono>
 #include <algorithm>
-#include <format> // Nativo de C++20 para reemplazar a fmt
+#include <format> 
 
 using namespace geode::prelude;
 
 // Función ultra-optimizada para reproducir y reutilizar las animaciones sin consumir CPU adicional
-void playVideoAnimation(const std::string& animName, GJBaseGameLayer* layer) {
+void playVideoAnimation(const std::string& animName, PlayLayer* layer) {
     const int VIDEO_TAG = 80085; // Identificador único para el sprite de la animación
 
-    // Buscamos la animación precargada en la memoria caché del juego
-    auto animation = CCAnimationCache::sharedAnimationCache()->animationByName(animName.c_str());
+    // Buscamos la animación precargada en la memoria caché (Sintaxis Geode v3)
+    auto animation = CCAnimationCache::get()->animationByName(animName.c_str());
     if (!animation) return;
 
     auto animate = CCAnimate::create(animation);
     auto sequence = CCSequence::create(
         animate,
-        CCRemoveSelf::create(), // Se elimina automáticamente al terminar la secuencia
+        CCRemoveSelf::create(), // Se elimina automáticamente al terminar
         nullptr
     );
 
@@ -27,14 +27,13 @@ void playVideoAnimation(const std::string& animName, GJBaseGameLayer* layer) {
         sprite->stopAllActions(); 
         sprite->runAction(sequence); 
     } 
-    // Si es el primer clic o la animación anterior ya había finalizado, creamos el sprite
     else {
         auto firstFrame = static_cast<CCSpriteFrame*>(animation->getFrames()->objectAtIndex(0));
         auto newSprite = CCSprite::createWithSpriteFrame(firstFrame);
         newSprite->setTag(VIDEO_TAG);
 
-        // Centrar en pantalla y escalar proporcionalmente (Aspect-Ratio)
-        auto winSize = CCDirector::sharedDirector()->getWinSize();
+        // Centrar en pantalla y escalar proporcionalmente (Sintaxis Geode v3)
+        auto winSize = CCDirector::get()->getWinSize();
         newSprite->setPosition(winSize / 2);
         
         float scaleX = winSize.width / newSprite->getContentSize().width;
@@ -42,96 +41,88 @@ void playVideoAnimation(const std::string& animName, GJBaseGameLayer* layer) {
         newSprite->setScale(std::max(scaleX, scaleY));
 
         newSprite->runAction(sequence);
-        layer->addChild(newSprite, 9999); // Dibujar en la capa superior por encima del gameplay
+        layer->addChild(newSprite, 9999); // Dibujar por encima del gameplay
     }
 }
 
-class $modify(MyBaseGameLayer, GJBaseGameLayer) {
+class $modify(MyPlayLayer, PlayLayer) {
     struct Fields {
-        // Registros de tiempo usando steady_clock para medir intervalos de microsegundos de forma precisa
         std::chrono::steady_clock::time_point m_lastP1Click = std::chrono::steady_clock::now() - std::chrono::hours(1);
         std::chrono::steady_clock::time_point m_lastP2Click = std::chrono::steady_clock::now() - std::chrono::hours(1);
     };
 
     void pushButton(PlayerButton btn, bool isPlayer2) {
-        // INICIALIZACIÓN PEREZOSA (Evita errores de compilación al no usar init())
+        // INICIALIZACIÓN PEREZOSA (Carga las texturas al primer clic del nivel)
         static bool initialized = false;
         if (!initialized) {
             initialized = true;
 
-            // 1. Precarga de las 90 imágenes directamente en la memoria de la GPU con std::format
+            // Precarga con la nueva sintaxis de texturas de Geode v3
             for (int i = 0; i < 30; i++) {
-                CCTextureCache::sharedTextureCache()->addImage(std::format("p1_frame_{:02d}.png", i).c_str());
-                CCTextureCache::sharedTextureCache()->addImage(std::format("p2_frame_{:02d}.png", i).c_str());
-                CCTextureCache::sharedTextureCache()->addImage(std::format("dual_frame_{:02d}.png", i).c_str());
+                CCTextureCache::get()->addImage(std::format("p1_frame_{:02d}.png", i).c_str());
+                CCTextureCache::get()->addImage(std::format("p2_frame_{:02d}.png", i).c_str());
+                CCTextureCache::get()->addImage(std::format("dual_frame_{:02d}.png", i).c_str());
             }
 
-            // 2. Definición del creador de animaciones a 30fps
             auto cacheAnimation = [](const std::string& prefix, const std::string& animName) {
                 auto animFrames = CCArray::create();
                 for (int i = 0; i < 30; i++) {
                     std::string fileName = std::format("{}_{:02d}.png", prefix, i);
-                    auto texture = CCTextureCache::sharedTextureCache()->textureForKey(fileName.c_str());
+                    auto texture = CCTextureCache::get()->textureForKey(fileName.c_str());
                     if (texture) {
                         auto rect = CCRect{ 0, 0, texture->getContentSize().width, texture->getContentSize().height };
                         auto frame = CCSpriteFrame::createWithTexture(texture, rect);
                         animFrames->addObject(frame);
                     }
                 }
-                // 30 FPS = ~0.033s por cuadro de animación
                 auto animation = CCAnimation::createWithSpriteFrames(animFrames, 1.0f / 30.0f);
-                CCAnimationCache::sharedAnimationCache()->addAnimation(animation, animName.c_str());
+                CCAnimationCache::get()->addAnimation(animation, animName.c_str());
             };
 
-            // Almacenamos las tres animaciones estructuradas en la caché global del motor
             cacheAnimation("p1_frame", "p1_anim");
             cacheAnimation("p2_frame", "p2_anim");
             cacheAnimation("dual_frame", "dual_anim");
         }
 
-        GJBaseGameLayer::pushButton(btn, isPlayer2);
+        PlayLayer::pushButton(btn, isPlayer2);
         
-        // Filtrar clics para actuar solo ante comandos de Salto
         if (btn != PlayerButton::Jump) return;
 
-        // Comprobación de seguridad: ¿El nivel actual está configurado como 'Two Player Mode'?
         bool isTwoPlayerLevel = false;
         if (this->m_levelSettings) {
             isTwoPlayerLevel = this->m_levelSettings->m_twoPlayerMode;
         }
 
         if (isTwoPlayerLevel) {
-            // === LÓGICA DE DETECCIÓN DUAL (Mano Izquierda, Derecha y Simultáneo) ===
             auto now = std::chrono::steady_clock::now();
-            const auto simultaneousThreshold = std::chrono::milliseconds(50); // Margen de coincidencia física
+            const auto simultaneousThreshold = std::chrono::milliseconds(50);
 
-            if (!isPlayer2) { // Acción Jugador 1
+            if (!isPlayer2) {
                 m_fields->m_lastP1Click = now;
                 auto timeDiff = std::chrono::duration_cast<std::chrono::milliseconds>(now - m_fields->m_lastP2Click);
                 
                 if (timeDiff < simultaneousThreshold) {
-                    playVideoAnimation("dual_anim", this); // Acción combinada (Ambas manos)
+                    playVideoAnimation("dual_anim", this);
                 } else {
-                    playVideoAnimation("p1_anim", this); // Solo Mano Izquierda
+                    playVideoAnimation("p1_anim", this);
                 }
             } 
-            else { // Acción Jugador 2
+            else {
                 m_fields->m_lastP2Click = now;
                 auto timeDiff = std::chrono::duration_cast<std::chrono::milliseconds>(now - m_fields->m_lastP1Click);
                 
                 if (timeDiff < simultaneousThreshold) {
-                    playVideoAnimation("dual_anim", this); // Acción combinada (Ambas manos)
+                    playVideoAnimation("dual_anim", this);
                 } else {
-                    playVideoAnimation("p2_anim", this); // Solo Mano Derecha
+                    playVideoAnimation("p2_anim", this);
                 }
             }
         } 
         else {
-            // === LÓGICA SPAM INDEPENDIENTE (1 Player - Multi-teclado/Sayo) ===
             if (!isPlayer2) {
-                playVideoAnimation("p1_anim", this); // Tecla izquierda Sayo (Mano 1)
+                playVideoAnimation("p1_anim", this);
             } else {
-                playVideoAnimation("p2_anim", this); // Tecla derecha Sayo (Mano 2)
+                playVideoAnimation("p2_anim", this);
             }
         }
     }
