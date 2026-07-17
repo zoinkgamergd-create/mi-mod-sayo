@@ -1,8 +1,9 @@
 {
-    "geode": "3.0.0-beta.1",
-    "id": "Justchill.sayo_clicks",
-    "version": "1.0.0",
-    "name": "Sayo Click Visualizer",
-    "developer": "Laypedro",
-    "description": "Muestra animaciones personalizadas en pantalla (P1, P2 y Dual) al presionar las teclas de tu Sayo Device."
+  "geode": "3.0.0",
+  "id": "colaborador.click_animations",
+  "version": "1.0.0",
+  "name": "Click Animations",
+  "developer": "Colaborador",
+  "description": "Muestra animaciones personalizadas al hacer clic en el juego.",
+  "settings": {}
 }
