@@ -1,5 +1,5 @@
 #include <Geode/Geode.hpp>
-#include <Geode/modify/GJBaseGameLayer.hpp>
+#include <Geode/modify/PlayLayer.hpp>
 #include <string>
 #include <chrono>
 #include <algorithm>
@@ -7,10 +7,10 @@
 using namespace geode::prelude;
 
 // Función optimizada para reproducir y reutilizar las animaciones
-void playVideoAnimation(const std::string& animName, GJBaseGameLayer* layer) {
+void playVideoAnimation(const std::string& animName, PlayLayer* layer) {
     const int VIDEO_TAG = 80085;
 
-    auto animation = CCAnimationCache::sharedAnimationCache()->animationByName(animName.c_str());
+    auto animation = CCAnimationCache::get()->animationByName(animName.c_str());
     if (!animation) return;
 
     auto animate = CCAnimate::create(animation);
@@ -29,7 +29,7 @@ void playVideoAnimation(const std::string& animName, GJBaseGameLayer* layer) {
         auto newSprite = CCSprite::createWithSpriteFrame(firstFrame);
         newSprite->setTag(VIDEO_TAG);
 
-        auto winSize = CCDirector::sharedDirector()->getWinSize();
+        auto winSize = CCDirector::get()->getWinSize();
         newSprite->setPosition(winSize / 2);
         
         float scaleX = winSize.width / newSprite->getContentSize().width;
@@ -41,7 +41,7 @@ void playVideoAnimation(const std::string& animName, GJBaseGameLayer* layer) {
     }
 }
 
-class $modify(MyBaseGameLayer, GJBaseGameLayer) {
+class $modify(MyPlayLayer, PlayLayer) {
     struct Fields {
         std::chrono::steady_clock::time_point m_lastP1Click = std::chrono::steady_clock::now() - std::chrono::hours(1);
         std::chrono::steady_clock::time_point m_lastP2Click = std::chrono::steady_clock::now() - std::chrono::hours(1);
@@ -49,20 +49,20 @@ class $modify(MyBaseGameLayer, GJBaseGameLayer) {
     };
 
     void pushButton(PlayerButton btn, bool isPlayer2) {
-        GJBaseGameLayer::pushButton(btn, isPlayer2);
+        PlayLayer::pushButton(btn, isPlayer2);
         
         if (btn != PlayerButton::Jump) return;
 
-        // Inicialización limpia compatible con Windows y Android sin usar std::format
+        // Inicialización limpia al primer clic dentro del nivel
         if (!m_fields->m_initialized) {
             m_fields->m_initialized = true;
 
             for (int i = 0; i < 30; i++) {
                 std::string num = (i < 10) ? "0" + std::to_string(i) : std::to_string(i);
                 
-                CCTextureCache::sharedTextureCache()->addImage(("p1_frame_" + num + ".png").c_str());
-                CCTextureCache::sharedTextureCache()->addImage(("p2_frame_" + num + ".png").c_str());
-                CCTextureCache::sharedTextureCache()->addImage(("dual_frame_" + num + ".png").c_str());
+                CCTextureCache::get()->addImage(("p1_frame_" + num + ".png").c_str());
+                CCTextureCache::get()->addImage(("p2_frame_" + num + ".png").c_str());
+                CCTextureCache::get()->addImage(("dual_frame_" + num + ".png").c_str());
             }
 
             auto cacheAnimation = [](const std::string& prefix, const std::string& animName) {
@@ -71,7 +71,7 @@ class $modify(MyBaseGameLayer, GJBaseGameLayer) {
                     std::string num = (i < 10) ? "0" + std::to_string(i) : std::to_string(i);
                     std::string fileName = prefix + "_" + num + ".png";
                     
-                    auto texture = CCTextureCache::sharedTextureCache()->textureForKey(fileName.c_str());
+                    auto texture = CCTextureCache::get()->textureForKey(fileName.c_str());
                     if (texture) {
                         auto rect = CCRect{ 0, 0, texture->getContentSize().width, texture->getContentSize().height };
                         auto frame = CCSpriteFrame::createWithTexture(texture, rect);
@@ -79,7 +79,7 @@ class $modify(MyBaseGameLayer, GJBaseGameLayer) {
                     }
                 }
                 auto animation = CCAnimation::createWithSpriteFrames(animFrames, 1.0f / 30.0f);
-                CCAnimationCache::sharedAnimationCache()->addAnimation(animation, animName.c_str());
+                CCAnimationCache::get()->addAnimation(animation, animName.c_str());
             };
 
             cacheAnimation("p1_frame", "p1_anim");
