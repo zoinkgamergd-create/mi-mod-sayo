@@ -10,7 +10,7 @@ using namespace geode::prelude;
 void playVideoAnimation(const std::string& animName, GJBaseGameLayer* layer) {
     const int VIDEO_TAG = 80085;
 
-    auto animation = CCAnimationCache::get()->animationByName(animName.c_str());
+    auto animation = CCAnimationCache::sharedAnimationCache()->animationByName(animName.c_str());
     if (!animation) return;
 
     auto animate = CCAnimate::create(animation);
@@ -29,7 +29,7 @@ void playVideoAnimation(const std::string& animName, GJBaseGameLayer* layer) {
         auto newSprite = CCSprite::createWithSpriteFrame(firstFrame);
         newSprite->setTag(VIDEO_TAG);
 
-        auto winSize = CCDirector::get()->getWinSize();
+        auto winSize = CCDirector::sharedDirector()->getWinSize();
         newSprite->setPosition(winSize / 2);
         
         float scaleX = winSize.width / newSprite->getContentSize().width;
@@ -53,25 +53,25 @@ class $modify(MyBaseGameLayer, GJBaseGameLayer) {
         
         if (btn != PlayerButton::Jump) return;
 
-        // Inicialización limpia al primer clic sin usar librerías incompatibles
+        // Inicialización usando el motor nativo del juego (Inmune a fallos)
         if (!m_fields->m_initialized) {
             m_fields->m_initialized = true;
 
             for (int i = 0; i < 30; i++) {
-                std::string num = (i < 10) ? "0" + std::to_string(i) : std::to_string(i);
-                
-                CCTextureCache::get()->addImage(("p1_frame_" + num + ".png").c_str());
-                CCTextureCache::get()->addImage(("p2_frame_" + num + ".png").c_str());
-                CCTextureCache::get()->addImage(("dual_frame_" + num + ".png").c_str());
+                const char* p1File = CCString::createWithFormat("p1_frame_%02d.png", i)->getCString();
+                const char* p2File = CCString::createWithFormat("p2_frame_%02d.png", i)->getCString();
+                const char* dualFile = CCString::createWithFormat("dual_frame_%02d.png", i)->getCString();
+
+                CCTextureCache::sharedTextureCache()->addImage(p1File);
+                CCTextureCache::sharedTextureCache()->addImage(p2File);
+                CCTextureCache::sharedTextureCache()->addImage(dualFile);
             }
 
-            auto cacheAnimation = [](const std::string& prefix, const std::string& animName) {
+            auto cacheAnimation = [](const char* prefix, const char* animName) {
                 auto animFrames = CCArray::create();
                 for (int i = 0; i < 30; i++) {
-                    std::string num = (i < 10) ? "0" + std::to_string(i) : std::to_string(i);
-                    std::string fileName = prefix + "_" + num + ".png";
-                    
-                    auto texture = CCTextureCache::get()->textureForKey(fileName.c_str());
+                    const char* fileName = CCString::createWithFormat("%s_%02d.png", prefix, i)->getCString();
+                    auto texture = CCTextureCache::sharedTextureCache()->textureForKey(fileName);
                     if (texture) {
                         auto rect = CCRect{ 0, 0, texture->getContentSize().width, texture->getContentSize().height };
                         auto frame = CCSpriteFrame::createWithTexture(texture, rect);
@@ -79,7 +79,7 @@ class $modify(MyBaseGameLayer, GJBaseGameLayer) {
                     }
                 }
                 auto animation = CCAnimation::createWithSpriteFrames(animFrames, 1.0f / 30.0f);
-                CCAnimationCache::get()->addAnimation(animation, animName.c_str());
+                CCAnimationCache::sharedAnimationCache()->addAnimation(animation, animName);
             };
 
             cacheAnimation("p1_frame", "p1_anim");
