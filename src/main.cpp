@@ -10,8 +10,7 @@ using namespace geode::prelude;
 void playVideoAnimation(const std::string& animName, GJBaseGameLayer* layer) {
     const int VIDEO_TAG = 80085;
 
-    // Sintaxis pura de Geode v3
-    auto animation = CCAnimationCache::get()->animationByName(animName.c_str());
+    auto animation = CCAnimationCache::sharedAnimationCache()->animationByName(animName.c_str());
     if (!animation) return;
 
     auto animate = CCAnimate::create(animation);
@@ -26,11 +25,20 @@ void playVideoAnimation(const std::string& animName, GJBaseGameLayer* layer) {
         sprite->runAction(sequence); 
     } 
     else {
-        auto firstFrame = static_cast<CCSpriteFrame*>(animation->getFrames()->objectAtIndex(0));
-        auto newSprite = CCSprite::createWithSpriteFrame(firstFrame);
+        // Enfoque ultra-seguro: Obtenemos el primer frame directamente desde la caché de texturas
+        // Esto evita errores de conversión de punteros internos entre compiladores
+        std::string firstFrameName = "p1_frame_00.png";
+        if (animName == "p2_anim") firstFrameName = "p2_frame_00.png";
+        else if (animName == "dual_anim") firstFrameName = "dual_frame_00.png";
+
+        auto texture = CCTextureCache::sharedTextureCache()->textureForKey(firstFrameName.c_str());
+        if (!texture) return;
+
+        auto rect = CCRect{ 0, 0, texture->getContentSize().width, texture->getContentSize().height };
+        auto newSprite = CCSprite::createWithTexture(texture, rect);
         newSprite->setTag(VIDEO_TAG);
 
-        auto winSize = CCDirector::get()->getWinSize();
+        auto winSize = CCDirector::sharedDirector()->getWinSize();
         newSprite->setPosition(winSize / 2);
         
         float scaleX = winSize.width / newSprite->getContentSize().width;
@@ -54,25 +62,31 @@ class $modify(MyBaseGameLayer, GJBaseGameLayer) {
         
         if (btn != PlayerButton::Jump) return;
 
-        // Inicialización limpia usando el motor gráfico nativo (Inmune a fallos de versión de C++)
+        // Inicialización usando formato clásico nativo (Inmune a fallos cross-platform)
         if (!m_fields->m_initialized) {
             m_fields->m_initialized = true;
 
             for (int i = 0; i < 30; i++) {
-                std::string p1File = CCString::createWithFormat("p1_frame_%02d.png", i)->getCString();
-                std::string p2File = CCString::createWithFormat("p2_frame_%02d.png", i)->getCString();
-                std::string dualFile = CCString::createWithFormat("dual_frame_%02d.png", i)->getCString();
+                char p1File[64];
+                char p2File[64];
+                char dualFile[64];
+                
+                sprintf(p1File, "p1_frame_%02d.png", i);
+                sprintf(p2File, "p2_frame_%02d.png", i);
+                sprintf(dualFile, "dual_frame_%02d.png", i);
 
-                CCTextureCache::get()->addImage(p1File.c_str());
-                CCTextureCache::get()->addImage(p2File.c_str());
-                CCTextureCache::get()->addImage(dualFile.c_str());
+                CCTextureCache::sharedTextureCache()->addImage(p1File);
+                CCTextureCache::sharedTextureCache()->addImage(p2File);
+                CCTextureCache::sharedTextureCache()->addImage(dualFile);
             }
 
             auto cacheAnimation = [](const std::string& prefix, const std::string& animName) {
                 auto animFrames = CCArray::create();
                 for (int i = 0; i < 30; i++) {
-                    std::string fileName = CCString::createWithFormat("%s_%02d.png", prefix.c_str(), i)->getCString();
-                    auto texture = CCTextureCache::get()->textureForKey(fileName.c_str());
+                    char fileName[64];
+                    sprintf(fileName, "%s_%02d.png", prefix.c_str(), i);
+                    
+                    auto texture = CCTextureCache::sharedTextureCache()->textureForKey(fileName);
                     if (texture) {
                         auto rect = CCRect{ 0, 0, texture->getContentSize().width, texture->getContentSize().height };
                         auto frame = CCSpriteFrame::createWithTexture(texture, rect);
@@ -80,7 +94,7 @@ class $modify(MyBaseGameLayer, GJBaseGameLayer) {
                     }
                 }
                 auto animation = CCAnimation::createWithSpriteFrames(animFrames, 1.0f / 30.0f);
-                CCAnimationCache::get()->addAnimation(animation, animName.c_str());
+                CCAnimationCache::sharedAnimationCache()->addAnimation(animation, animName.c_str());
             };
 
             cacheAnimation("p1_frame", "p1_anim");
@@ -88,12 +102,9 @@ class $modify(MyBaseGameLayer, GJBaseGameLayer) {
             cacheAnimation("dual_frame", "dual_anim");
         }
 
-        // Verificación ultra segura del modo de 2 jugadores buscando la capa de juego activa
         bool isTwoPlayerLevel = false;
-        if (auto playLayer = PlayLayer::get()) {
-            if (playLayer->m_levelSettings && playLayer->m_levelSettings->m_twoPlayerMode) {
-                isTwoPlayerLevel = true;
-            }
+        if (m_levelSettings) {
+            isTwoPlayerLevel = m_levelSettings->m_twoPlayerMode;
         }
 
         if (isTwoPlayerLevel) {
